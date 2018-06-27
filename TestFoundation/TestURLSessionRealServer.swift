@@ -28,7 +28,7 @@ class TestURLSessionRealServer : XCTestCase {
     static var allTests: [(String, (TestURLSessionRealServer) -> () throws -> Void)] {
         return [
             ("test_dataTaskWithHttpBody", test_dataTaskWithHttpBody),
-            //("test_dataTaskWithHttpInputStream", test_dataTaskWithHttpInputStream), // HTTPBin doesn't support chunked transfer encoding
+            ("test_dataTaskWithHttpInputStream", test_dataTaskWithHttpInputStream), // HTTPBin doesn't support chunked transfer encoding
             ("test_dataTaskWithBasicAuth", test_dataTaskWithBasicAuth),
             ("test_dataTaskWithDigestAuth", test_dataTaskWithDigestAuth)
         ]
@@ -62,41 +62,42 @@ class TestURLSessionRealServer : XCTestCase {
         XCTAssertTrue(delegate.response != nil)
         XCTAssertTrue(delegate.response?.data == loremIpsum)
     }
+    func test_dataTaskWithHttpInputStream() {
+        let delegate = HTTPBinResponseDelegateJSON<HTTPBinResponse>()
+        
+        let urlString = "http://httpbin.org/post"
+        let url = URL(string: urlString)!
+        let urlSession = URLSession(configuration: URLSessionConfiguration.default, delegate: delegate, delegateQueue: nil)
+        
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        
+        guard let data = loremIpsum.data(using: .utf8) else {
+            XCTFail()
+            return
+        }
+        
+        let inputStream = InputStream(data: data)
+        inputStream.open()
+        
+        urlRequest.httpBody = data
+        urlRequest.httpBodyStream = inputStream
+        
+        urlRequest.setValue("en-us", forHTTPHeaderField: "Accept-Language")
+        urlRequest.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("chunked", forHTTPHeaderField: "Transfer-Encoding")
+        
+        let urlTask = urlSession.dataTask(with: urlRequest)
+        urlTask.resume()
+        
+        delegate.semaphore.wait()
+        
+        XCTAssertTrue(urlTask.response != nil)
+        XCTAssertTrue(delegate.response != nil)
+        XCTAssertTrue(delegate.response?.data == loremIpsum)
+    }
     
-//    func test_dataTaskWithHttpInputStream() {
-//        let delegate = HTTPBinResponseDelegate<HTTPBinResponse>()
-//
-//        let urlString = "http://httpbin.org/post"
-//        let url = URL(string: urlString)!
-//        let urlSession = URLSession(configuration: URLSessionConfiguration.default, delegate: delegate, delegateQueue: nil)
-//
-//        var urlRequest = URLRequest(url: url)
-//        urlRequest.httpMethod = "POST"
-//
-//        guard let data = loremIpsum.data(using: .utf8) else {
-//            XCTFail()
-//            return
-//        }
-//
-//        let inputStream = InputStream(data: data)
-//        inputStream.open()
-//
-//        urlRequest.httpBody = data
-//        urlRequest.httpBodyStream = inputStream
-//
-//        urlRequest.setValue("en-us", forHTTPHeaderField: "Accept-Language")
-//        urlRequest.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
-//        urlRequest.setValue("chunked", forHTTPHeaderField: "Transfer-Encoding")
-//
-//        let urlTask = urlSession.dataTask(with: urlRequest)
-//        urlTask.resume()
-//
-//        delegate.semaphore.wait()
-//
-//        XCTAssertTrue(urlTask.response != nil)
-//        XCTAssertTrue(delegate.response != nil)
-//        XCTAssertTrue(delegate.response?.data == loremIpsum)
-//    }
+    
     
     func test_dataTaskWithBasicAuth() {
         let delegate = HTTPBinResponseDelegateJSON<HTTPBinAuthResponse>()
@@ -187,7 +188,7 @@ class TestURLSessionRealServer : XCTestCase {
         public func parseResposne(data: Data) -> T? {
             fatalError("")
         }
-    
+        
     }
     
     class HTTPBinResponseDelegateString: HTTPBinResponseDelegate<String> {
@@ -222,6 +223,7 @@ class TestURLSessionRealServer : XCTestCase {
         
     }
     
-
-
+    
+    
 }
+
