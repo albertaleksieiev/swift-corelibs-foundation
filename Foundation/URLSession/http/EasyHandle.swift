@@ -286,6 +286,13 @@ extension _EasyHandle {
 
         return false
     }
+
+    func set(trustAllCertificates: Bool) {
+        let verifyPeer = trustAllCertificates ? 0 : 1
+        let verifyHost = trustAllCertificates ? 0 : 1
+        CFURLSession_easy_setopt_long(rawHandle, CFURLSessionOptionSSL_VERIFYPEER, verifyPeer)
+        CFURLSession_easy_setopt_long(rawHandle, CFURLSessionOptionSSL_VERIFYHOST, verifyHost)
+    }
 }
 
 fileprivate func printLibcurlDebug(handle: CFURLSessionEasyHandle, type: CInt, data: UnsafeMutablePointer<Int8>, size: Int, userInfo: UnsafeMutableRawPointer?) -> CInt {

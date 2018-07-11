@@ -24,21 +24,21 @@ import Dispatch
 /// A cancelable object that refers to the lifetime
 /// of processing a given request.
 open class URLSessionTask : NSObject, NSCopying {
-    
+
     public var countOfBytesClientExpectsToReceive: Int64 { NSUnimplemented() }
     public var countOfBytesClientExpectsToSend: Int64 { NSUnimplemented() }
     public var earliestBeginDate: Date? { NSUnimplemented() }
-    
+
     /// How many times the task has been suspended, 0 indicating a running task.
     internal var suspendCount = 1
     internal var session: URLSessionProtocol! //change to nil when task completes
     internal let body: _Body
     fileprivate var _protocol: URLProtocol? = nil
     private let syncQ = DispatchQueue(label: "org.swift.URLSessionTask.SyncQ")
-    
+
     /// All operations must run on this queue.
     internal let workQueue: DispatchQueue
-    
+
     public override init() {
         // Darwin Foundation oddly allows calling this initializer, even though
         // such a task is quite broken -- it doesn't have a session. And calling
@@ -571,7 +571,7 @@ extension _ProtocolClient : URLProtocolClient {
                                 realm = String(wwwAuthHeaderValue.dropFirst(part.lowerBound).prefix(part.length))
                             }
                         } catch {
-                            
+
                         }
                         
                         return URLProtectionSpace(host: host, port: port, protocol: _protocol, realm: realm, authenticationMethod: authMethod)
@@ -612,24 +612,35 @@ extension _ProtocolClient : URLProtocolClient {
                     switch(disposition) {
                         case .useCredential:
                             task.suspend()
-                            
+
                             // Read props from protocol
                             var protocolCredentials: URLCredential?
+                            var protocolTrust: Bool?
                             if let taskProtocol = task._protocol as? _HTTPURLProtocol {
                                 protocolCredentials = taskProtocol.urlCredentials
+                                protocolTrust = taskProtocol.trustAllCertificates
                             }
-                            
+
                             // Read from completionHandler
                             // URLCredentials holds credentials OR trustAllCertificates
                             if let credential = credential {
-                                protocolCredentials = credential
+                                if let trust = credential._trustAllCertificated { // Trust field is set
+                                    protocolTrust = trust
+                                } else {
+                                    protocolCredentials = credential
+                                }
                             }
-                            
-                            task._protocol = _HTTPURLProtocol(task: task, cachedResponse: nil, client: nil)            
-                            
+
+                            task._protocol = _HTTPURLProtocol(task: task, cachedResponse: nil, client: nil)
+
                             if let credential = protocolCredentials {
                                 task.setCredentials(credential)
                             }
+
+                            if let trustAllCertificate = protocolTrust {
+                                task.setTrustAllCertificates(trustAllCertificate)
+                            }
+
                             if !task.setAuthMethod(authScheme) {
                                 NSLog("\(authScheme) is not supported")
                             }
@@ -659,6 +670,7 @@ extension _ProtocolClient : URLProtocolClient {
         default: return
         }
     }
+    
     
     func urlProtocolDidFinishLoading(_ protocol: URLProtocol) {
         // TODO remove fatalError!!!!
@@ -750,6 +762,24 @@ extension _ProtocolClient : URLProtocolClient {
 
     func urlProtocol(_ protocol: URLProtocol, didFailWithError error: Error) {
         guard let task = `protocol`.task else { fatalError() }
+        let certificateErrors = [NSURLErrorServerCertificateUntrusted, NSURLErrorServerCertificateWrongHost]
+        
+        if certificateErrors.contains(error._code) {
+            let protectionSpace = URLProtectionSpace(host: "", port: 443, protocol: "https", realm: "", authenticationMethod: NSURLAuthenticationMethodServerTrust)
+            if let sender = `protocol` as? URLAuthenticationChallengeSender {
+                let authenticationChallenge = URLAuthenticationChallenge(protectionSpace: protectionSpace,
+                                                                         proposedCredential: nil,
+                                                                         previousFailureCount: task.previousFailureCount,
+                                                                         failureResponse: nil,
+                                                                         error: error,
+                                                                         sender: sender)
+                
+                task.previousFailureCount += 1
+                urlProtocol(`protocol`, didReceive: authenticationChallenge)
+            }
+            return
+        }
+        
         urlProtocol(task: task, didFailWithError: error)
     }
 
@@ -810,6 +840,13 @@ extension URLSessionTask {
         NSLog("Set auth method \(authMethod), status = \(status)")
 
         return status
+    }
+
+    public func setTrustAllCertificates(_ trustAll: Bool) {
+        guard let p = _protocol as? _HTTPURLProtocol else {
+            fatalError()
+        }
+        p.set(trustAllCertificates: trustAll)
     }
 }
 

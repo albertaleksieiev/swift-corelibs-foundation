@@ -956,6 +956,11 @@ extension _HTTPURLProtocol {
         }
     }
 
+    func set(trustAllCertificates: Bool) {
+        self.trustAllCertificates = trustAllCertificates
+        easyHandle.set(trustAllCertificates: trustAllCertificates)
+    }
+
     func set(authMethod: String) -> Bool {
         return easyHandle.set(authMethod: authMethod)
     }
