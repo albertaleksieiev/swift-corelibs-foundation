@@ -31,7 +31,8 @@ class TestURLSessionRealServer: XCTestCase {
             ("test_dataTaskWithBasicAuth", test_dataTaskWithBasicAuth),
             ("test_dataTaskWithDigestAuth", test_dataTaskWithDigestAuth),
             ("test_dataTaskWithDigestAuth_CredentialOnce", test_dataTaskWithDigestAuth_CredentialOnce),
-            ("test_dataTaskWithDigestAuth_AuthChallenges", test_dataTaskWithDigestAuth_AuthChallenges)
+            ("test_dataTaskWithDigestAuth_AuthChallenges", test_dataTaskWithDigestAuth_AuthChallenges),
+            ("test_badCertificate", test_badCertificate)
         ]
     }
 
@@ -64,6 +65,32 @@ class TestURLSessionRealServer: XCTestCase {
         XCTAssertTrue(delegate.response?.data == loremIpsum)
     }
 
+    func test_badCertificate() {
+        let delegate = HTTPBinResponseDelegateAuthOwnCert<HTTPBinAuthResponse>()
+
+        let certificateFailures = ["self-signed", "expired", "wrong.host", "untrusted-root", "revoked", "pinning-test"]
+
+        for certFailure in certificateFailures {
+            let url = URL(string: "https://\(certFailure).badssl.com/")!
+            let urlSession = URLSession(configuration: URLSessionConfiguration.default, delegate: delegate, delegateQueue: nil)
+            urlSession.delegate = delegate
+
+            var urlRequest = URLRequest(url: url)
+            urlRequest.httpMethod = "GET"
+            urlRequest.setValue("en-us", forHTTPHeaderField: "Accept-Language")
+            urlRequest.setValue("text/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
+
+            let urlTask = urlSession.dataTask(with: urlRequest)
+            urlTask.resume()
+
+            delegate.semaphore.wait()
+            XCTAssertTrue(urlTask.response != nil)
+            XCTAssertTrue(urlTask.response is HTTPURLResponse)
+            XCTAssertTrue((urlTask.response as! HTTPURLResponse).statusCode == 200)
+        }
+    }
+    
+    
     func test_dataTaskWithHttpInputStream() {
         let delegate = HTTPBinResponseDelegateJSON<HTTPBinResponse>()
 
@@ -194,6 +221,18 @@ class TestURLSessionRealServer: XCTestCase {
         override func urlSession(_ session: URLSession, task: URLSessionTask, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
             print("didReceive challenge")
             completionHandler(.useCredential, httpBinCredentails)
+        }
+    }
+    
+    class HTTPBinResponseDelegateAuthOwnCert<T: Codable>: HTTPBinResponseDelegateJSON<T> {
+        override func urlSession(_ session: URLSession, task: URLSessionTask, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+            
+            if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
+                completionHandler(.useCredential, URLCredential.init(trust: true))
+            }
+            else {
+                completionHandler(.useCredential, httpBinCredentails)
+            }
         }
     }
 
