@@ -535,176 +535,107 @@ extension _ProtocolClient : URLProtocolClient {
             break
         }
     }
-    
-    func createProtectionSpaceFromHeader(_ response: HTTPURLResponse) -> URLProtectionSpace? {
-        let host = response.url?.host ?? ""
-        let port = response.url?.port ?? 80        //we're doing http
-        let _protocol = response.url?.scheme
-        for (key, val) in response.allHeaderFields {
-            if (key as! String).lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == "www-authenticate" {
-                if let wwwAuthHeaderValue = val as? String {
-                    let components = wwwAuthHeaderValue.components(separatedBy: " ")
-                    
-                    var authMethod = !components.isEmpty ? components[0].lowercased() : ""
-                    
-                    // to NSURLAuthenticationMethod format
-                    if authMethod == "basic" {
-                        authMethod = NSURLAuthenticationMethodHTTPBasic
-                    } else if authMethod == "digest" {
-                        authMethod = NSURLAuthenticationMethodHTTPDigest
-                    } else if authMethod == "ntlm" {
-                        authMethod = NSURLAuthenticationMethodNTLM
-                    } else if authMethod == "negotiate" {
-                        authMethod = NSURLAuthenticationMethodNegotiate
-                    } else {
-                        authMethod = ""
-                    }
-                    
-                    if !authMethod.isEmpty {
-                        var realm = ""
-                        do {
-                            let pattern = "realm=(\"|')(.*?)(\"|')"
-                            let regex = try NSRegularExpression(pattern: pattern)
-                            let result = regex.matches(in: wwwAuthHeaderValue, range: NSMakeRange(0, wwwAuthHeaderValue.utf16.count))
-                            if !result.isEmpty && result[0].numberOfRanges == 4 {
-                                let part = result[0].range(at: 2)
-                                realm = String(wwwAuthHeaderValue.dropFirst(part.lowerBound).prefix(part.length))
-                            }
-                        } catch {
 
-                        }
-                        
-                        return URLProtectionSpace(host: host, port: port, protocol: _protocol, realm: realm, authenticationMethod: authMethod)
-                    }
-                }
-            }
-        }
-        
-        return nil
-    }
-    func createProtectionsSpaces(_ response: HTTPURLResponse) -> [URLProtectionSpace] {
-        let host = response.url?.host ?? ""
-        let port = response.url?.port ?? 80
-        let _protocol = response.url?.scheme
-        
-        let authMethods = [
-            NSURLAuthenticationMethodHTTPBasic,
-            NSURLAuthenticationMethodHTTPDigest,
-            NSURLAuthenticationMethodNTLM,
-            NSURLAuthenticationMethodNegotiate,
-        ]
-        
-        return authMethods.map { authMethod in
-            return URLProtectionSpace(host: host, port: port, protocol: _protocol, realm: "", authenticationMethod: authMethod)
-        }
-    }
-    
-    
     func urlProtocol(_ protocol: URLProtocol, didReceive challenge: URLAuthenticationChallenge) {
-        guard let task = `protocol`.task else { fatalError() }
-        guard let session = task.session as? URLSession else { fatalError() }
-    
+        guard let task = `protocol`.task else {
+            fatalError("task cannot be nil")
+        }
+        guard let session = task.session as? URLSession else {
+            fatalError("session need to be an instance of URLSession")
+        }
+
         switch session.behaviour(for: task) {
         case .taskDelegate(let delegate):
             session.delegateQueue.addOperation {
                 let authScheme = challenge.protectionSpace.authenticationMethod
                 delegate.urlSession(session, task: task, didReceive: challenge) { disposition, credential in
-                    switch(disposition) {
-                        case .useCredential:
-                            task.suspend()
+                    switch disposition {
+                    case .useCredential:
+                        task.suspend()
 
-                            // Read props from protocol
-                            var protocolCredentials: URLCredential?
-                            var protocolTrust: Bool?
-                            if let taskProtocol = task._protocol as? _HTTPURLProtocol {
-                                protocolCredentials = taskProtocol.urlCredentials
-                                protocolTrust = taskProtocol.trustAllCertificates
-                            }
-
-                            // Read from completionHandler
-                            // URLCredentials holds credentials OR trustAllCertificates
-                            if let credential = credential {
-                                if let trust = credential._trustAllCertificated { // Trust field is set
-                                    protocolTrust = trust
-                                } else {
-                                    protocolCredentials = credential
-                                }
-                            }
-
-                            task._protocol = _HTTPURLProtocol(task: task, cachedResponse: nil, client: nil)
-
-                            if let credential = protocolCredentials {
-                                task.setCredentials(credential)
-                            }
-
-                            if let trustAllCertificate = protocolTrust {
-                                task.setTrustAllCertificates(trustAllCertificate)
-                            }
-
-                            if !task.setAuthMethod(authScheme) {
-                                NSLog("\(authScheme) is not supported")
-                            }
-                            
-                            task.resume()
-                            break
-                        case .performDefaultHandling:
-                            task.protectionSpaces = []
-                            
-                            session.workQueue.async {
-                                task._protocol?.client?.urlProtocolDidFinishLoading(`protocol`)
-                            }
-                            break
-                        case .rejectProtectionSpace:
-                            session.workQueue.async {
-                                task._protocol?.client?.urlProtocolDidFinishLoading(`protocol`)
-                            }
-                            break
-                        case .cancelAuthenticationChallenge:
-                            task.protectionSpaces = []
-                            task.cancel()
-                            break
+                        // Read props from protocol
+                        var protocolCredentials: URLCredential?
+                        var protocolTrust: Bool?
+                        if let taskProtocol = task._protocol as? _HTTPURLProtocol {
+                            protocolCredentials = taskProtocol.urlCredentials
+                            protocolTrust = taskProtocol.trustAllCertificates
                         }
+
+                        // Read from completionHandler
+                        // URLCredentials holds credentials OR trustAllCertificates
+                        if let credential = credential {
+                            if let trust = credential._trustAllCertificated { // Trust field is set
+                                protocolTrust = trust
+                            } else {
+                                protocolCredentials = credential
+                            }
+                        }
+
+                        task._protocol = _HTTPURLProtocol(task: task, cachedResponse: nil, client: nil)
+
+                        if let credential = protocolCredentials {
+                            task.setCredentials(credential)
+                        }
+
+                        if let trustAllCertificate = protocolTrust {
+                            task.setTrustAllCertificates(trustAllCertificate)
+                        }
+
+                        if !task.setAuthMethod(authScheme) {
+                            NSLog("\(authScheme) is not supported")
+                        }
+
+                        task.resume()
+                    case .performDefaultHandling:
+                        task.protectionSpaces = []
+
+                        session.workQueue.async {
+                            task._protocol?.client?.urlProtocolDidFinishLoading(`protocol`)
+                        }
+                    case .rejectProtectionSpace:
+                        session.workQueue.async {
+                            task._protocol?.client?.urlProtocolDidFinishLoading(`protocol`)
+                        }
+                    case .cancelAuthenticationChallenge:
+                        task.protectionSpaces = []
+                        task.cancel()
                     }
-                
+                }
             }
         default: return
         }
     }
-    
-    
+
     func urlProtocolDidFinishLoading(_ protocol: URLProtocol) {
-        // TODO remove fatalError!!!!
-        guard let task = `protocol`.task else { fatalError() }
-        guard let session = task.session as? URLSession else { fatalError() }
+        guard let task = `protocol`.task else { fatalError("task cannot be nil") }
+        guard let session = task.session as? URLSession else { fatalError("session cannot be nil") }
         guard let response = task.response as? HTTPURLResponse else { fatalError("No response") }
 
         if response.statusCode == 401 {
             // concate protection space from header and all posible protection spaces
             if !task.protectionSpacesInited { // init protection spaces
-                var allPossibleProtectionSpaces = createProtectionsSpaces(response)
-                if let protectionSpaceFromHeader = createProtectionSpaceFromHeader(response) {
+                var allPossibleProtectionSpaces = AuthProtectionSpace.createAllPossible(using: response)
+                if let protectionSpaceFromHeader = AuthProtectionSpace.create(using:response) {
                     allPossibleProtectionSpaces.insert(protectionSpaceFromHeader, at: 0)
                 }
-                
+
                 task.protectionSpaces = allPossibleProtectionSpaces
                 task.protectionSpacesInited = true
             }
-            
             if let sender = `protocol` as? URLAuthenticationChallengeSender, task.protectionSpaces.isEmpty == false {
                 let protectionSpace = task.protectionSpaces.removeFirst()
                 let authenticationChallenge = URLAuthenticationChallenge(protectionSpace: protectionSpace,
-                                                                         proposedCredential: nil,
-                                                                         previousFailureCount: task.previousFailureCount,
-                                                                         failureResponse: response,
-                                                                         error: nil,
-                                                                         sender: sender)
-                
+                        proposedCredential: nil,
+                        previousFailureCount: task.previousFailureCount,
+                        failureResponse: response,
+                        error: nil,
+                        sender: sender)
+
                 task.previousFailureCount += 1
                 urlProtocol(`protocol`, didReceive: authenticationChallenge)
                 return
             }
         }
-
 
         switch session.behaviour(for: task) {
         case .taskDelegate(let delegate):
@@ -743,12 +674,14 @@ extension _ProtocolClient : URLProtocolClient {
         NSUnimplemented()
     }
 
-    
-
     func urlProtocol(_ protocol: URLProtocol, didLoad data: Data) {
         `protocol`.properties[.responseData] = data
-        guard let task = `protocol`.task else { fatalError() }
-        guard let session = task.session as? URLSession else { fatalError() }
+        guard let task = `protocol`.task else {
+            fatalError("task cannot be nil")
+        }
+        guard let session = task.session as? URLSession else {
+            fatalError("session cannot be nil")
+        }
         switch session.behaviour(for: task) {
         case .taskDelegate(let delegate):
             let dataDelegate = delegate as? URLSessionDataDelegate
@@ -761,30 +694,39 @@ extension _ProtocolClient : URLProtocolClient {
     }
 
     func urlProtocol(_ protocol: URLProtocol, didFailWithError error: Error) {
-        guard let task = `protocol`.task else { fatalError() }
+        guard let task = `protocol`.task else {
+            fatalError()
+        }
         let certificateErrors = [NSURLErrorServerCertificateUntrusted, NSURLErrorServerCertificateWrongHost]
-        
+
         if certificateErrors.contains(error._code) {
-            let protectionSpace = URLProtectionSpace(host: "", port: 443, protocol: "https", realm: "", authenticationMethod: NSURLAuthenticationMethodServerTrust)
+            let protectionSpace = URLProtectionSpace(host: "",
+                    port: 443,
+                    protocol: "https",
+                    realm: "",
+                    authenticationMethod: NSURLAuthenticationMethodServerTrust)
+
             if let sender = `protocol` as? URLAuthenticationChallengeSender {
                 let authenticationChallenge = URLAuthenticationChallenge(protectionSpace: protectionSpace,
-                                                                         proposedCredential: nil,
-                                                                         previousFailureCount: task.previousFailureCount,
-                                                                         failureResponse: nil,
-                                                                         error: error,
-                                                                         sender: sender)
-                
+                        proposedCredential: nil,
+                        previousFailureCount: task.previousFailureCount,
+                        failureResponse: nil,
+                        error: error,
+                        sender: sender)
+
                 task.previousFailureCount += 1
                 urlProtocol(`protocol`, didReceive: authenticationChallenge)
             }
             return
         }
-        
+
         urlProtocol(task: task, didFailWithError: error)
     }
 
     func urlProtocol(task: URLSessionTask, didFailWithError error: Error) {
-        guard let session = task.session as? URLSession else { fatalError() }
+        guard let session = task.session as? URLSession else {
+            fatalError()
+        }
         switch session.behaviour(for: task) {
         case .taskDelegate(let delegate):
             session.delegateQueue.addOperation {
@@ -826,30 +768,29 @@ extension _ProtocolClient : URLProtocolClient {
 
 extension URLSessionTask {
     public func setCredentials(_ credential: URLCredential) {
-        guard let p = _protocol as? _HTTPURLProtocol else {
-            fatalError()
+        guard let httpUrlProtocol = _protocol as? _HTTPURLProtocol else {
+            fatalError("protocol need to be an instance of _HTTPURLProtocol")
         }
-        p.set(credential: credential)
+        httpUrlProtocol.set(credential: credential)
     }
 
-    public func setAuthMethod(_ authMethod: String) -> Bool{
-        guard let p = _protocol as? _HTTPURLProtocol else {
-            fatalError()
+    public func setAuthMethod(_ authMethod: String) -> Bool {
+        guard let httpUrlProtocol = _protocol as? _HTTPURLProtocol else {
+            fatalError("protocol need to be an instance of _HTTPURLProtocol")
         }
-        let status = p.set(authMethod: authMethod)
+        let status = httpUrlProtocol.set(authMethod: authMethod)
         NSLog("Set auth method \(authMethod), status = \(status)")
 
         return status
     }
 
     public func setTrustAllCertificates(_ trustAll: Bool) {
-        guard let p = _protocol as? _HTTPURLProtocol else {
-            fatalError()
+        guard let httpUrlProtocol = _protocol as? _HTTPURLProtocol else {
+            fatalError("protocol need to be an instance of _HTTPURLProtocol")
         }
-        p.set(trustAllCertificates: trustAll)
+        httpUrlProtocol.set(trustAllCertificates: trustAll)
     }
 }
-
 
 extension URLProtocol {
     enum _PropertyKey: String {

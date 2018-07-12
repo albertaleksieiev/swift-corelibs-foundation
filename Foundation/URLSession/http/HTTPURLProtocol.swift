@@ -678,11 +678,8 @@ internal extension _HTTPURLProtocol {
         guard let url = request.url else { fatalError("No URL in request.") }
 
         self.internalState = .transferReady(createTransferState(url: url, workQueue: t.workQueue))
-        if let authRequest = task?.authRequest {
-            configureEasyHandle(for: authRequest)
-        } else {
-            configureEasyHandle(for: request)
-        }
+
+        configureEasyHandle(for: request)
         if (t.suspendCount) < 1 {
             resume()
         }

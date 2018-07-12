@@ -303,23 +303,82 @@ open class URLProtectionSpace : NSObject, NSSecureCoding, NSCopying {
     }
 }
 
-extension URLProtectionSpace {
+open class AuthProtectionSpace: URLProtectionSpace {
     //an internal helper to create a URLProtectionSpace from a HTTPURLResponse
-    static func create(using response: HTTPURLResponse) -> URLProtectionSpace {
+    static func createByHeaders(using response: HTTPURLResponse) -> URLProtectionSpace {
         let host = response.url?.host ?? ""
-        let port = response.url?.port ?? 80        //HTTP
-        let _protocol = response.url?.scheme
-        guard let wwwAuthHeader = response.allHeaderFields["Www-Authenticate"] as? String else {
-            fatalError("Authentication failed but no Www-Authenticate header in response")
-        }
+        let port = response.url?.port ?? 80        //we're doing http
+        let schemeProtocol = response.url?.scheme
+        for (key, val) in response.allHeaderFields {
+            if let headerKey = key as? String,
+               headerKey.trimmingCharacters(in: .whitespacesAndNewlines) == "www-authenticate",
+               let wwwAuthHeaderValue = val as? String {
 
-        //The format of the authentication header is `<auth-scheme> realm="<realm value>"`
-        //Example: `Basic realm="Fake Realm"`
-        let authMethod = wwwAuthHeader.components(separatedBy: " ")[0]
-        let realm = String(String(wwwAuthHeader.components(separatedBy: "realm=")[1].dropFirst()).dropLast())
-        return URLProtectionSpace(host: host, port: port, protocol: _protocol, realm: realm, authenticationMethod: authMethod)
+                let components = wwwAuthHeaderValue.components(separatedBy: " ")
+
+                var authMethod = !components.isEmpty ? components[0].lowercased() : ""
+
+                // to NSURLAuthenticationMethod format
+                if authMethod == "basic" {
+                    authMethod = NSURLAuthenticationMethodHTTPBasic
+                } else if authMethod == "digest" {
+                    authMethod = NSURLAuthenticationMethodHTTPDigest
+                } else if authMethod == "ntlm" {
+                    authMethod = NSURLAuthenticationMethodNTLM
+                } else if authMethod == "negotiate" {
+                    authMethod = NSURLAuthenticationMethodNegotiate
+                } else {
+                    authMethod = ""
+                }
+
+                if !authMethod.isEmpty {
+                    var realm = ""
+                    do {
+                        let pattern = "realm=(\"|')(.*?)(\"|')"
+                        let regex = try NSRegularExpression(pattern: pattern)
+                        let result = regex.matches(in: wwwAuthHeaderValue,
+                                range: NSMakeRange.init(0, wwwAuthHeaderValue.utf16.count))
+                        if !result.isEmpty && result[0].numberOfRanges == 4 {
+                            let part = result[0].range(at: 2)
+                            realm = String(wwwAuthHeaderValue.dropFirst(part.lowerBound).prefix(part.length))
+                        }
+                    } catch {
+
+                    }
+
+                    return AuthProtectionSpace(host: host,
+                            port: port,
+                            protocol: schemeProtocol,
+                            realm: realm,
+                            authenticationMethod: authMethod)
+                }
+            }
+        }
+        return nil
+    }
+
+    static func createAllPossible(using response: HTTPURLResponse) -> [URLProtectionSpace] {
+        let host = response.url?.host ?? ""
+        let port = response.url?.port ?? 80
+        let schemeProtocol = response.url?.scheme
+
+        let authMethods = [
+            NSURLAuthenticationMethodHTTPBasic,
+            NSURLAuthenticationMethodHTTPDigest,
+            NSURLAuthenticationMethodNTLM,
+            NSURLAuthenticationMethodNegotiate
+        ]
+
+        return authMethods.map { authMethod in
+            return AuthProtectionSpace(host: host,
+                    port: port,
+                    protocol: schemeProtocol,
+                    realm: "",
+                    authenticationMethod: authMethod)
+        }
     }
 }
+
 
 extension URLProtectionSpace {
 
