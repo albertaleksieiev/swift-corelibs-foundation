@@ -84,7 +84,7 @@ extension _HTTPBodyDataSource: _HTTPBodySource {
 
 
     func seekTo(to position: UInt64) throws {
-        if position >= data.count {
+        if position >= originalData.count {
             throw _HTTPBodySourceError.cannotSeek
         }
 
